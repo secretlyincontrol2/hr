@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+apscheduler
+google-genai
+tavily-python
+python-dotenv
+pydantic
+httpx
+
+psycopg2-binary

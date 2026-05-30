@@ -1,0 +1,22 @@
+# Environments
+backend/.env
+frontend/.env
+.env
+
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.npm/
+
+# Logs and Data
+backend/hackathons_cache.json
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
