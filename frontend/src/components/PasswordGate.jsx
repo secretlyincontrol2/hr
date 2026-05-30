@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 
 const STORAGE_KEY = 'hr_token';
+const API = import.meta.env.VITE_API_URL || '/api';
 
 /**
  * PasswordGate
@@ -87,7 +88,7 @@ export default function PasswordGate({ onUnlocked }) {
     setError('');
 
     try {
-      const res = await fetch('/api/auth', {
+      const res = await fetch(`${API}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: code }),
