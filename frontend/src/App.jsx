@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import PasswordGate, { STORAGE_KEY } from './components/PasswordGate.jsx';
 import SpreadsheetView from './components/SpreadsheetView.jsx';
 
-const API = '/api';
+const API = import.meta.env.VITE_API_URL || '/api';
 
 function getAuthHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
