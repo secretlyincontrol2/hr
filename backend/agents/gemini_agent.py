@@ -12,6 +12,7 @@ from typing import List
 import time
 from google import genai
 from google.genai import types
+from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ IMPORTANT RULES:
 4. Return ONLY a valid JSON array. No markdown, no explanation, just the JSON array.
 5. If no hackathons found, return an empty array: []
 
-Search results context:
+Raw search results (in JSON format):
 {context}
 """
 
@@ -159,26 +160,20 @@ def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
     for query in gemini_queries:
         logger.info("Gemini searching: %s", query)
         try:
-            # Step 1: Use Google Search grounding to get fresh web results
-            search_response = _generate_content_with_retry(
-                client,
-                model="gemini-2.5-flash-lite",
-                contents=query,
-                config=types.GenerateContentConfig(
-                    tools=[
-                        types.Tool(url_context=types.UrlContext()),
-                        types.Tool(googleSearch=types.GoogleSearch())
-                    ],
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    temperature=0.1,
-                ),
-            )
-
-            context = search_response.text or ""
-
-            if not context:
+            # Step 1: Use DuckDuckGo to get fresh web results with REAL urls
+            ddg_results = []
+            try:
+                # Max results = 15 for enough context
+                ddg_results = list(DDGS().text(query, max_results=15))
+            except Exception as ddg_err:
+                logger.warning("DDGS error for query '%s': %s", query, ddg_err)
+            
+            if not ddg_results:
                 logger.warning("Empty search response for query: %s", query)
                 continue
+
+            # Convert DDG results to JSON string for the extraction context
+            context = json.dumps(ddg_results, indent=2)
 
             # Step 2: Ask Gemini to extract structured hackathon data from the context
             extraction_response = _generate_content_with_retry(
@@ -223,7 +218,7 @@ def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
             logger.error("Gemini search failed for query '%s': %s", query, e)
             continue
         finally:
-            time.sleep(2)  # Delay between iteration loops
+            time.sleep(4)  # 4 second delay to prevent DDGS rate-limiting
 
     logger.info("Gemini agent finished. Total unique hackathons: %d", len(all_hackathons))
     return all_hackathons
