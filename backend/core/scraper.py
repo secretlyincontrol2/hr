@@ -59,11 +59,14 @@ def run_scrape_cycle() -> dict:
         def on_batch_found(batch: List[dict]):
             if not batch:
                 return
-            batch_with_ids = _assign_ids(batch)
-            vetted = vet_hackathons(batch_with_ids)
+            # 1. Vet first so URLs are canonicalized via Google Search
+            vetted = vet_hackathons(batch)
+            # 2. Assign IDs based on the exact canonical URL
+            vetted_with_ids = _assign_ids(vetted)
+            # 3. Save incrementally
             next_run = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
-            store.save_hackathons(vetted, next_run=next_run)
-            logger.info("Incrementally saved %d vetted hackathons.", len(vetted))
+            store.save_hackathons(vetted_with_ids, next_run=next_run)
+            logger.info("Incrementally saved %d vetted hackathons.", len(vetted_with_ids))
 
         # Phase 1: Search with Gemini
         logger.info("Phase 1: Gemini Search Agent")

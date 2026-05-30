@@ -24,12 +24,13 @@ For each hackathon:
 1. Check if the deadline has already PASSED (is before {today}). If so, set "is_active": false.
 2. If the deadline is null or uncertain, check if the hackathon description/title suggests it's past (e.g., says "2025", "ended", "closed"). If clearly past, set is_active: false.
 3. If the deadline appears to be in the future or is unknown, set "is_active": true.
-4. Normalize the "deadline" field to YYYY-MM-DD format if you can parse it, otherwise keep null.
-5. Normalize "start_date" similarly.
-6. Ensure "categories" is a non-empty array of tags. Add sensible defaults if missing (e.g., ["General"]).
-7. Ensure "location" is one of: "Remote", "Hybrid", or starts with "In-Person:".
-8. Add a "vetted_at" field with value "{timestamp}".
-9. Return ONLY the JSON array of all hackathons (both active and inactive), with all fields set correctly.
+4. IMPORTANT: URL Canonicalization. If "url" points to a generic directory/aggregator (e.g. dorahacks.io/hackathon, mlh.io, devpost.com, taikai.network) OR is missing, you MUST use your Google Search tool to search for the EXACT hackathon title and find its specific canonical URL. Update the "url" field to point directly to the event's actual registration page.
+5. Normalize the "deadline" field to YYYY-MM-DD format if you can parse it, otherwise keep null.
+6. Normalize "start_date" similarly.
+7. Ensure "categories" is a non-empty array of tags. Add sensible defaults if missing (e.g., ["General"]).
+8. Ensure "location" is one of: "Remote", "Hybrid", or starts with "In-Person:".
+9. Add a "vetted_at" field with value "{timestamp}".
+10. Return ONLY the JSON array of all hackathons (both active and inactive), with all fields set correctly.
 
 Raw hackathons input:
 {hackathons_json}
@@ -111,7 +112,10 @@ def vet_hackathons(raw_hackathons: List[dict]) -> List[dict]:
                     timestamp=timestamp,
                     hackathons_json=json.dumps(batch, indent=2),
                 ),
-                config=types.GenerateContentConfig(temperature=0.0),
+                config=types.GenerateContentConfig(
+                    temperature=0.0,
+                    tools=[types.Tool(googleSearch=types.GoogleSearch())],
+                ),
             )
 
             batch_vetted = _extract_json(response.text or "[]")
