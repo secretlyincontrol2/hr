@@ -11,9 +11,9 @@ from typing import List
 
 import time
 import requests
+import requests
 from google import genai
 from google.genai import types
-from duckduckgo_search import DDGS
 from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
@@ -149,30 +149,14 @@ def _generate_gemini_queries(gemini_client: genai.Client) -> List[str]:
 
 def _perform_search(query: str) -> List[dict]:
     """
-    Triple-redundant search waterfall:
-    1. DuckDuckGo (Free)
-    2. SerpAPI (Freemium/Paid)
-    3. Tavily (Freemium/Paid)
+    Dual-redundant search waterfall:
+    1. SerpAPI (Primary - Exact Google Links)
+    2. Tavily (Fallback)
     Returns standard format: [{"title": "...", "url": "...", "snippet": "..."}]
     """
     normalized_results = []
     
-    # 1. DuckDuckGo
-    try:
-        ddg_results = list(DDGS().text(query, max_results=15))
-        if ddg_results:
-            logger.info("Search fulfilled by DuckDuckGo.")
-            for r in ddg_results:
-                normalized_results.append({
-                    "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", "")
-                })
-            return normalized_results
-    except Exception as e:
-        logger.warning("DuckDuckGo failed: %s. Falling back to SerpAPI.", e)
-
-    # 2. SerpAPI
+    # 1. SerpAPI
     serp_key = os.getenv("SERPAPI_API_KEY")
     if serp_key:
         try:
@@ -197,7 +181,7 @@ def _perform_search(query: str) -> List[dict]:
     else:
         logger.info("No SERPAPI_API_KEY found, falling back to Tavily.")
 
-    # 3. Tavily
+    # 2. Tavily
     tavily_key = os.getenv("TAVILY_API_KEY")
     if tavily_key:
         try:
@@ -286,7 +270,7 @@ def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
             logger.error("Gemini search failed for query '%s': %s", query, e)
             continue
         finally:
-            time.sleep(4)  # 4 second delay to prevent DDGS rate-limiting
+            time.sleep(2)  # Delay between iteration loops
 
     logger.info("Gemini agent finished. Total unique hackathons: %d", len(all_hackathons))
     return all_hackathons

@@ -8,5 +8,4 @@ pydantic
 httpx
 
 psycopg2-binary
-duckduckgo-search>=7.3.0
 requests
