@@ -34,7 +34,7 @@ export default function App() {
   const [categories, setCategories] = useState([]);
 
   // ── UI state ────────────────────────────────
-  const [view, setView] = useState('sheet');   // 'sheet' | 'cards'
+  const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768) ? 'cards' : 'sheet');
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [locFilter, setLocFilter] = useState('');
