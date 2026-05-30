@@ -32,6 +32,7 @@ export default function App() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
+  const [locations, setLocations] = useState([]);
 
   // ── UI state ────────────────────────────────
   const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768) ? 'cards' : 'sheet');
@@ -50,7 +51,23 @@ export default function App() {
       const res = await fetch(url, { headers });
       if (res.status === 401) { setAuthed(false); return; }
       const data = await res.json();
-      setHackathons(data.hackathons || []);
+      const hacks = data.hackathons || [];
+      setHackathons(hacks);
+
+      // Dynamically extract unique locations
+      const locSet = new Set(['Remote', 'Hybrid']);
+      hacks.forEach(h => {
+        if (h.location && h.location.startsWith('In-Person:')) {
+          const parts = h.location.split(',');
+          if (parts.length > 1) {
+            locSet.add(parts[parts.length - 1].trim());
+          } else {
+            // Fallback if no comma
+            locSet.add(h.location.replace('In-Person:', '').trim());
+          }
+        }
+      });
+      setLocations(Array.from(locSet).sort());
     } catch (e) {
       console.error('Fetch hackathons failed:', e);
     } finally {
@@ -107,9 +124,11 @@ export default function App() {
     if (locFilter) {
       result = result.filter(h => {
         if (locFilter === 'Remote') return h.location === 'Remote';
-        if (locFilter === 'In-Person') return h.location?.startsWith('In-Person');
         if (locFilter === 'Hybrid') return h.location === 'Hybrid';
-        return true;
+        if (h.location?.startsWith('In-Person:')) {
+          return h.location.includes(locFilter);
+        }
+        return false;
       });
     }
     setFiltered(result);
@@ -284,9 +303,9 @@ export default function App() {
           onChange={e => setLocFilter(e.target.value)}
         >
           <option value="">All Locations</option>
-          <option value="Remote">Remote</option>
-          <option value="In-Person">In-Person</option>
-          <option value="Hybrid">Hybrid</option>
+          {locations.map(loc => (
+            <option key={loc} value={loc}>{loc}</option>
+          ))}
         </select>
       </div>
 

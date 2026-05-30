@@ -28,7 +28,7 @@ For each hackathon:
 5. Normalize the "deadline" field to YYYY-MM-DD format if you can parse it, otherwise keep null.
 6. Normalize "start_date" similarly.
 7. Ensure "categories" is a non-empty array of tags. Add sensible defaults if missing (e.g., ["General"]).
-8. Ensure "location" is one of: "Remote", "Hybrid", or starts with "In-Person:".
+8. Ensure "location" is one of: "Remote", "Hybrid", or starts with "In-Person:". If it is In-Person, you MUST append the country name (e.g. "In-Person: Lagos, Nigeria", "In-Person: London, UK", "In-Person: San Francisco, US").
 9. Add a "vetted_at" field with value "{timestamp}".
 10. Return ONLY the JSON array of all hackathons (both active and inactive), with all fields set correctly.
 

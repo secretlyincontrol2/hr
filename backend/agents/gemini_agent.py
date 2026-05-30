@@ -24,7 +24,7 @@ You MUST use advanced Google Search operators and extreme specificity:
 1. Specific Platforms via `site:` operators (e.g. site:lu.ma, site:devpost.com, site:dorahacks.io, site:taikai.network, site:ethglobal.com)
 2. Specific endpoints (e.g. inurl:/hackathons, intitle:"Hackathon Registration")
 3. Micro-niche tech stacks (e.g. "zk-SNARKs hackathon", "Rust game dev hackathon", "Solana DeFi bounty")
-4. Exact cities or obscure locations (e.g. "hackathon happening in Austin, TX", "in-person hackathon Berlin")
+4. Geographic Targeting: You MUST dedicate at least 15 of your 50 queries to explicitly search for hackathons in specific countries and continents. Explicitly include "Nigeria", "Africa", "UK", "US", "Singapore", "India" in the search terms (e.g. "hackathon happening in Nigeria", "in-person hackathon Lagos", "tech bounty Africa", "hackathon London UK"). The remaining queries should target "Remote" or "Global" events.
 5. Time constraints (e.g. "applications open until {year}", "hackathon starting next week")
 
 Every single query MUST be highly unique, fiercely precise, and laser-targeted. Combine operators to force exact results.
