@@ -10,9 +10,11 @@ from datetime import datetime
 from typing import List
 
 import time
+import requests
 from google import genai
 from google.genai import types
 from duckduckgo_search import DDGS
+from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +147,77 @@ def _generate_gemini_queries(gemini_client: genai.Client) -> List[str]:
     ]
 
 
+def _perform_search(query: str) -> List[dict]:
+    """
+    Triple-redundant search waterfall:
+    1. DuckDuckGo (Free)
+    2. SerpAPI (Freemium/Paid)
+    3. Tavily (Freemium/Paid)
+    Returns standard format: [{"title": "...", "url": "...", "snippet": "..."}]
+    """
+    normalized_results = []
+    
+    # 1. DuckDuckGo
+    try:
+        ddg_results = list(DDGS().text(query, max_results=15))
+        if ddg_results:
+            logger.info("Search fulfilled by DuckDuckGo.")
+            for r in ddg_results:
+                normalized_results.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", "")
+                })
+            return normalized_results
+    except Exception as e:
+        logger.warning("DuckDuckGo failed: %s. Falling back to SerpAPI.", e)
+
+    # 2. SerpAPI
+    serp_key = os.getenv("SERPAPI_API_KEY")
+    if serp_key:
+        try:
+            res = requests.get(
+                "https://serpapi.com/search",
+                params={"q": query, "api_key": serp_key, "engine": "google", "num": 15},
+                timeout=15
+            )
+            if res.ok:
+                data = res.json()
+                if "organic_results" in data:
+                    logger.info("Search fulfilled by SerpAPI.")
+                    for r in data["organic_results"]:
+                        normalized_results.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("link", ""),
+                            "snippet": r.get("snippet", "")
+                        })
+                    return normalized_results
+        except Exception as e:
+            logger.warning("SerpAPI failed: %s. Falling back to Tavily.", e)
+    else:
+        logger.info("No SERPAPI_API_KEY found, falling back to Tavily.")
+
+    # 3. Tavily
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        try:
+            client = TavilyClient(api_key=tavily_key)
+            data = client.search(query, search_depth="basic", max_results=15)
+            if "results" in data:
+                logger.info("Search fulfilled by Tavily.")
+                for r in data["results"]:
+                    normalized_results.append({
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("content", "")
+                    })
+                return normalized_results
+        except Exception as e:
+            logger.warning("Tavily failed: %s. Waterfall exhausted.", e)
+
+    return []
+
+
 def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
     """
     Uses Gemini 2.0 Flash with Google Search grounding to find hackathons.
@@ -160,20 +233,15 @@ def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
     for query in gemini_queries:
         logger.info("Gemini searching: %s", query)
         try:
-            # Step 1: Use DuckDuckGo to get fresh web results with REAL urls
-            ddg_results = []
-            try:
-                # Max results = 15 for enough context
-                ddg_results = list(DDGS().text(query, max_results=15))
-            except Exception as ddg_err:
-                logger.warning("DDGS error for query '%s': %s", query, ddg_err)
+            # Step 1: Execute triple-redundant search waterfall
+            search_results = _perform_search(query)
             
-            if not ddg_results:
+            if not search_results:
                 logger.warning("Empty search response for query: %s", query)
                 continue
 
-            # Convert DDG results to JSON string for the extraction context
-            context = json.dumps(ddg_results, indent=2)
+            # Convert to JSON string for the extraction context
+            context = json.dumps(search_results, indent=2)
 
             # Step 2: Ask Gemini to extract structured hackathon data from the context
             extraction_response = _generate_content_with_retry(
