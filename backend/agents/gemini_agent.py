@@ -34,16 +34,32 @@ Every single query MUST be highly unique, fiercely precise, and laser-targeted. 
 Return ONLY a valid JSON array of 50 strings. No markdown formatting, no explanations.
 """
 
+URL_SELECTION_PROMPT = """
+You are a master URL filter. I have performed a search for "{query}" and obtained the following snippets.
+Your goal is to identify the most promising URLs that point DIRECTLY to specific hackathons (e.g. registration pages, devpost links, dorahacks event links).
+Ignore generic directory pages (like simply "mlh.io" or "dorahacks.io/hackathons") UNLESS they are the only option. 
+Ignore news articles or blogs if they don't look like registration portals.
+
+Return ONLY a valid JSON array of strings containing the top {limit} most promising absolute URLs from these results.
+Do not output markdown, do not invent URLs that are not in the JSON. If there are no good URLs, return [].
+
+Search snippets:
+{snippets}
+"""
+
 EXTRACTION_PROMPT = """
-You are a hackathon data extractor. I have performed a Google Search for "{query}" and the results are shown below.
+You are a hackathon data extractor. I have fetched the FULL webpage content for the following URL: {url}
 
 Today's date is: {today}
 
-From the search results, extract ALL hackathons you can find. For each hackathon, return a JSON array with objects having these exact fields:
+Read the webpage content below carefully and extract the hackathon details.
+Return a JSON array with exactly ONE object (if the page describes a valid hackathon), or an EMPTY array [] if the page is irrelevant/junk.
+
+The object must have these exact fields:
 - "title": string — name of the hackathon
 - "organizer": string — who's hosting it
-- "description": string — 1-2 sentence description
-- "url": string — MUST be the EXACT absolute URL (starting with https://) from the search result source. If the source is a directory/index page and the specific event link is not explicitly written in the text, DO NOT hallucinate or construct a new URL. Instead, use the exact index page URL provided.
+- "description": string — 2-3 sentence detailed description
+- "url": string — use exactly {url}
 - "deadline": string or null — application deadline in format YYYY-MM-DD (null if not found)
 - "start_date": string or null — when the hackathon starts, in YYYY-MM-DD format (null if not found)
 - "prize": string or null — prize info (e.g. "$10,000 total prizes", null if not found)
@@ -51,13 +67,11 @@ From the search results, extract ALL hackathons you can find. For each hackathon
 - "location": string — "Remote", "Hybrid", or "In-Person: [City]"
 
 IMPORTANT RULES:
-1. Only include hackathons whose deadline is AFTER {today} OR where the deadline is unknown/not yet set.
-2. Do NOT include hackathons that have already ended.
-3. If you're unsure about a deadline, include it with deadline=null (we'll vet it separately).
-4. Return ONLY a valid JSON array. No markdown, no explanation, just the JSON array.
-5. If no hackathons found, return an empty array: []
+1. Extract ALL fields you can find since you have the full page text. Do not leave prize or dates null if they are mentioned.
+2. Only include the hackathon if its deadline is AFTER {today} OR where the deadline is unknown/not yet set.
+3. Return ONLY a valid JSON array. No markdown, no explanation, just the JSON array.
 
-Raw search results (in JSON format):
+Full Webpage Markdown Content:
 {context}
 """
 
@@ -130,8 +144,16 @@ def _generate_gemini_queries(gemini_client: genai.Client) -> List[str]:
             ),
         )
         queries = _extract_json(response.text or "[]")
-        queries = queries[:50]  # Ensure exact limit
+        
+        # Prepend 3 explicit Nigerian queries to run first
+        nigerian_queries = [
+            f"hackathons in nigeria {year} apply now",
+            f"lagos tech hackathon open registration {year}",
+            f"nigerian tech bounty competition in-person {year}"
+        ]
+        
         if queries and isinstance(queries, list) and len(queries) > 0:
+            queries = nigerian_queries + queries[:47]
             logger.info("Successfully generated %d Gemini queries", len(queries))
             return queries
     except Exception as e:
@@ -146,6 +168,17 @@ def _generate_gemini_queries(gemini_client: genai.Client) -> List[str]:
         f"global online hackathon competition {year} prizes",
     ]
 
+
+def _fetch_jina_markdown(url: str) -> str:
+    """Fetches the full markdown content of a page using Jina Reader API."""
+    try:
+        jina_url = f"https://r.jina.ai/{url}"
+        res = requests.get(jina_url, timeout=20)
+        if res.ok:
+            return res.text
+    except Exception as e:
+        logger.warning("Failed to fetch markdown for %s: %s", url, e)
+    return ""
 
 def _perform_search(query: str) -> List[dict]:
     """
@@ -224,47 +257,63 @@ def search_hackathons_with_gemini(on_batch_found=None) -> List[dict]:
                 logger.warning("Empty search response for query: %s", query)
                 continue
 
-            # Convert to JSON string for the extraction context
-            context = json.dumps(search_results, indent=2)
-
-            # Step 2: Ask Gemini to extract structured hackathon data from the context
-            extraction_response = _generate_content_with_retry(
+            # Step 2: Ask Gemini to select the top 3 most promising URLs
+            snippets_context = json.dumps(search_results, indent=2)
+            selection_response = _generate_content_with_retry(
                 client,
                 model="gemini-2.5-flash-lite",
-                contents=EXTRACTION_PROMPT.format(
+                contents=URL_SELECTION_PROMPT.format(
                     query=query,
-                    today=today,
-                    context=context[:8000],  # Limit context size
+                    limit=3,
+                    snippets=snippets_context[:8000],
                 ),
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                ),
+                config=types.GenerateContentConfig(temperature=0.1),
             )
-
-            hackathons = _extract_json(extraction_response.text or "[]")
-
+            
+            top_urls = _extract_json(selection_response.text or "[]")
+            
+            # Step 3: For each top URL, perform Deep Jina Extraction
             batch = []
-            for h in hackathons:
-                url = h.get("url", "").strip()
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
+            for url in top_urls:
+                if not isinstance(url, str) or not url.startswith("http"):
+                    continue
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                
+                logger.info("Deep extracting URL: %s", url)
+                markdown_content = _fetch_jina_markdown(url)
+                if not markdown_content:
+                    continue
+                
+                # Step 4: Ask Gemini to extract full details from the Jina Markdown
+                extraction_response = _generate_content_with_retry(
+                    client,
+                    model="gemini-2.5-flash-lite",
+                    contents=EXTRACTION_PROMPT.format(
+                        url=url,
+                        today=today,
+                        context=markdown_content[:25000],  # Give Gemini enough context but stay under limits
+                    ),
+                    config=types.GenerateContentConfig(temperature=0.1),
+                )
+                
+                hackathons = _extract_json(extraction_response.text or "[]")
+                
+                for h in hackathons:
                     h["source"] = "gemini"
                     batch.append(h)
                     all_hackathons.append(h)
-
+                
+                time.sleep(1) # Small delay to avoid Jina rate limits
+                
             if batch and on_batch_found:
                 try:
                     on_batch_found(batch)
                 except Exception as e:
                     logger.error("Gemini callback failed for batch: %s", e)
 
-            if hackathons:
-                logger.info(
-                    "Query '%s' yielded %d hackathons (total so far: %d)",
-                    query,
-                    len(hackathons),
-                    len(all_hackathons),
-                )
+            logger.info("Query '%s' yielded %d hackathons (total so far: %d)", query, len(batch), len(all_hackathons))
 
         except Exception as e:
             logger.error("Gemini search failed for query '%s': %s", query, e)
