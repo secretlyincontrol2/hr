@@ -111,7 +111,13 @@ export default function App() {
 
   // ── Client-side filter ───────────────────────
   useEffect(() => {
-    let result = [...hackathons];
+    // 1. Automatically remove any hackathon with a "minus" (deadline passed)
+    let result = hackathons.filter(h => {
+      if (!h.deadline) return true;
+      const daysLeft = Math.ceil((new Date(h.deadline) - new Date()) / (1000 * 60 * 60 * 24));
+      return daysLeft >= 0;
+    });
+
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(h =>
